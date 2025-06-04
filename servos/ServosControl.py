@@ -29,7 +29,7 @@ class FeetAction(Action):
 class ArmAction(Action):
     max_delta_angle: int = 100
     min_delta_angle: int = 50
-    actions: Dict[str, ServosList] = Field(default = True)
+    actions: ServosList
     def __init__(
             self,
             action: str,
@@ -44,7 +44,16 @@ class ArmAction(Action):
         self.min_delta_angle = min_delta_angle
         self.actions = self.generate_actions(action, force)
 
-    def generate_actions(self, action: str = None, force: float = 0.0):
+    def generate_actions(self, action: str = None, force: float = 0.0) -> ServosList:
+        # 沒加會導致在非 raspberrypi 的環境上會出現 Exception
+        if not is_raspberry_pi():
+            return ServosList(
+                servosList = [
+                    Servos(
+                        servos = []
+                    )
+                ]
+            )
         delta_angle = int(round(map_clamped(
             force,
             0,
