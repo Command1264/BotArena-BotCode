@@ -1,7 +1,6 @@
 import asyncio
 from typing import Optional
 import websockets
-import ssl
 from pydantic import BaseModel
 
 from actions.ReturnStatus import ReturnStatus
@@ -12,6 +11,7 @@ from RobotController import RobotController
 robot = RobotController()
 
 class WebSocketAction(BaseModel):
+    request_id: str
     action: str
     position: Optional[str] = ""
     direction: Optional[str] = ""
@@ -36,6 +36,7 @@ async def handle_connection(websocket):
                 if web_socket_action.action == "control":
                     await websocket.send(
                         ReturnStatus(
+                            request_id = web_socket_action.request_id,
                             success = robot.control_group_action_control(
                                 web_socket_action.to_action_control()
                             ),
@@ -47,6 +48,7 @@ async def handle_connection(websocket):
                     robot.stop_action(web_socket_action.to_stop_action())
                     await websocket.send(
                         ReturnStatus(
+                            request_id = web_socket_action.request_id,
                             success = True,
                             status = "stopped"
                         ).model_dump_json()
@@ -55,6 +57,7 @@ async def handle_connection(websocket):
                 elif web_socket_action.action == "ping":
                     await websocket.send(
                         ReturnStatus(
+                            request_id = web_socket_action.request_id,
                             success = True,
                             status = "pong"
                         ).model_dump_json()
@@ -63,14 +66,17 @@ async def handle_connection(websocket):
                 else:
                     await websocket.send(
                         ReturnStatus(
+                            request_id = web_socket_action.request_id,
                             success = False,
                             status = "未知指令"
                         ).model_dump_json()
                     )
 
         except Exception as e:
+            print(e)
             await websocket.send(
                 ReturnStatus(
+                    request_id = "null",
                     success = False,
                     status = str(e)
                 ).model_dump_json()
@@ -80,7 +86,7 @@ async def handle_connection(websocket):
     except Exception as e:
         print(f"❌ 意外錯誤: {e}")
     finally:
-        print("🔌 連接已正常退出")
+        print("🔌 連接已退出")
 
 async def main(host, port):
     async with websockets.serve(
