@@ -1,4 +1,4 @@
-import threading
+import threading, time
 
 class ActionThread:
     def __init__(self):
@@ -7,3 +7,4 @@ class ActionThread:
         self.stop_event = threading.Event() # 新增：可中斷的旗標
         self.running_action = False  # 表示目前是否正在執行 start_action
         self.action_thread = None
+        self.last_start_time: time = 0.0
