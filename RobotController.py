@@ -27,15 +27,6 @@ class RobotController:
         }
         self.logger = self.__setup_logging()
 
-    def check_interval_time(self, action_thread: ActionThread):
-        now = time.time()
-        if abs(now - action_thread.last_start_time) < 0.1:
-            self.logger.warning(f"[Debounce] 忽略過快的 start_actions 呼叫")
-            return False
-
-        action_thread.last_start_time = now
-        return True
-
     def __setup_logging(self):
         logger = logging.getLogger("robot")
         logger.setLevel(logging.INFO)
@@ -74,10 +65,10 @@ class RobotController:
     ):
         if not self.check_interval_time(action_thread):
             return
+        if action_thread.running_action:
+            self.logger.info(f"[Lock] 已在執行 start_actions（方向：{action_thread.last_direction}），忽略此次：{direction}")
+            return  # 忽略新的 start_feet_actions 請求
         with action_thread.lock:
-            if action_thread.running_action:
-                self.logger.info(f"[Lock] 已在執行 start_actions（方向：{action_thread.last_direction}），忽略此次：{direction}")
-                return  # 忽略新的 start_feet_actions 請求
 
             action_thread.running_action = True  # 上鎖，表示開始執行
             action_thread.stop_event.clear()
@@ -171,3 +162,24 @@ class RobotController:
             time.sleep(max_interval / 1000.0)
 
         return True
+
+
+    def check_interval_time(self, action_thread: ActionThread):
+        now = time.time()
+        if abs(now - action_thread.last_start_time) < 0.1:
+            self.logger.warning(f"[Debounce] 忽略過快的 start_actions 呼叫")
+            return False
+
+        action_thread.last_start_time = now
+        return True
+
+    def check_action_can_use(self, action_control: ActionControl):
+        try:
+            action_thread = self.action_threads[action_control.position]
+
+            can_use = action_thread.lock.acquire(blocking=False)
+            if can_use: action_thread.lock.release()  # 如果取得成功要釋放
+
+            return action_thread.running_action and can_use
+        except Exception as e:
+            return False

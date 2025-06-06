@@ -33,7 +33,18 @@ async def handle_connection(websocket):
             async for message in websocket:
                 web_socket_action = WebSocketAction.model_validate_json(message)
                 # 控制
-                if web_socket_action.action == "control":
+                if web_socket_action.action == "checkControl":
+                    (success, can_use) = robot.check_action_can_use(
+                        web_socket_action.to_action_control()
+                    )
+                    await websocket.send(
+                        ReturnStatus(
+                            request_id = web_socket_action.request_id,
+                            success = success,
+                            status = str(can_use)
+                        ).model_dump_json()
+                    )
+                elif web_socket_action.action == "control":
                     await websocket.send(
                         ReturnStatus(
                             request_id = web_socket_action.request_id,
