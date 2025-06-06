@@ -18,6 +18,7 @@ class RobotController:
         self.is_raspberry_pi = is_raspberry_pi()
         self.log = True
         self.last_log_times = {}
+        self.last_start_time = {}
         self.log_interval = 2
 
         self.action_threads = {
@@ -25,6 +26,15 @@ class RobotController:
             "feet": ActionThread(),
         }
         self.logger = self.__setup_logging()
+
+    def check_interval_time(self, action_thread: ActionThread):
+        now = time.time()
+        if abs(now - action_thread.last_start_time) < 0.1:
+            self.logger.warning(f"[Debounce] 忽略過快的 start_actions 呼叫")
+            return False
+
+        action_thread.last_start_time = now
+        return True
 
     def __setup_logging(self):
         logger = logging.getLogger("robot")
@@ -62,6 +72,8 @@ class RobotController:
             direction: str,
             force: float = 0.0
     ):
+        if not self.check_interval_time(action_thread):
+            return
         with action_thread.lock:
             if action_thread.running_action:
                 self.logger.info(f"[Lock] 已在執行 start_actions（方向：{action_thread.last_direction}），忽略此次：{direction}")
@@ -100,15 +112,18 @@ class RobotController:
         self._run_stand_action(action_thread)
 
     def _run_stand_action(self, action_thread: ActionThread):
-        action_thread.stop_event.clear()
-        action_thread.action_thread = threading.Thread(
-            target = self._run_action,
-            kwargs = {
-                "action_thread": action_thread,
-                "servos_list": feet_stand()
-            }
-        )
-        action_thread.action_thread.start()
+        with action_thread.lock:
+            action_thread.running_action = True  # 鎖定，避免被其他 start_actions 插入
+            action_thread.stop_event.clear()
+            action_thread.action_thread = threading.Thread(
+                target = self._run_action,
+                kwargs = {
+                    "action_thread": action_thread,
+                    "servos_list": feet_stand()
+                }
+            )
+            action_thread.action_thread.start()
+
 
     def control_group_action_control(self, action_control: ActionControl) -> bool:
         return self.control_group(
