@@ -1,6 +1,6 @@
 from servos.Servos import *
 import sqlite3
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from typing import Dict
 
 from IsRaspberryPi import is_raspberry_pi
@@ -29,31 +29,33 @@ class FeetAction(Action):
 class ArmAction(Action):
     max_delta_angle: int = 100
     min_delta_angle: int = 50
-    actions: ServosList
-    def __init__(
-            self,
-            action: str,
-            force: float,
-            max_delta_angle,
-            min_delta_angle,
-            max_interval,
-            min_interval,
-    ):
-        super().__init__(max_interval = max_interval, min_interval = min_interval)
-        self.max_delta_angle = max_delta_angle
-        self.min_delta_angle = min_delta_angle
-        self.actions = self.generate_actions(action, force)
+    actions: ServosList = Field(default_factory = ServosList)
+    action_name : str
+    force: float = 0.0
+
+    @model_validator(mode="after")
+    def set_actions(self) -> 'ArmAction':
+        # 必須先保證 self 有 action / force 屬性
+        self.actions = self.generate_actions(self.action_name, self.force)
+        return self
+    # def __init__(
+    #         self,
+    #         action: str,
+    #         force: float,
+    #         max_delta_angle,
+    #         min_delta_angle,
+    #         max_interval,
+    #         min_interval,
+    # ):
+    #     super().__init__(max_interval = max_interval, min_interval = min_interval)
+    #     self.max_delta_angle = max_delta_angle
+    #     self.min_delta_angle = min_delta_angle
+    #     self.actions = self.generate_actions(action, force)
 
     def generate_actions(self, action: str = None, force: float = 0.0) -> ServosList:
         # 沒加會導致在非 raspberrypi 的環境上會出現 Exception
         if not is_raspberry_pi():
-            return ServosList(
-                servosList = [
-                    Servos(
-                        servos = []
-                    )
-                ]
-            )
+            return ServosList()
         delta_angle = int(round(map_clamped(
             force,
             0,
@@ -114,7 +116,7 @@ class ArmAction(Action):
                 ]
             )
         else:
-            return {}
+            return ServosList()
 
 
 
@@ -188,34 +190,34 @@ def feet_stand() -> ServosList:
 
 def get_action_servos_list(
         position: str,
-        action: str = "stand",
+        action_name: str = "stand",
         force: float = 0.0
 ) -> ServosList:
     is_feet = position == "feet"
-    action = feet_action_map.get(action, lambda _: FeetAction(
+    control_action = feet_action_map.get(action_name, lambda _: FeetAction(
         path = "./TonyPi/ActionGroups/stand.d6a",
         max_interval = 50,
         min_interval = 50
     )) if is_feet else ArmAction(
-        action = action,
+        action_name = action_name,
         force = force,
         max_interval = 200,
-        min_interval = 50,
-        max_delta_angle = 100,
-        min_delta_angle = 10,
+        min_interval = 100,
+        max_delta_angle = 50,
+        min_delta_angle = 5,
     )
     interval = int(round(map_clamped(
         force,
         0,
         1,
-        action.max_interval,
-        action.min_interval,
+        control_action.max_interval,
+        control_action.min_interval,
     )))
 
     servos_list = load_servos_from_db(
-        action.path,
+        control_action.path,
         feet_servo_range,
-    ) if is_feet else action.actions
+    ) if is_feet else control_action.actions
 
     for servos in servos_list.servos_list:
         servos.interval = interval
